@@ -1,0 +1,120 @@
+"""Service class for Alma Item Updates"""
+import json
+import logging
+from typing import Any
+
+import azure.core.exceptions
+import azure.functions as func
+import requests
+from wrlc_alma_api_client import AlmaApiClient
+from wrlc_alma_api_client.exceptions import NotFoundError, InvalidInputError, AlmaApiError
+from wrlc_alma_api_client.models import Item
+from wrlc_azure_storage_service import StorageService
+
+from alma_item_checks_update_service.config import (
+    API_CLIENT_TIMEOUT,
+    INSTITUTION_API_ENDPOINT,
+    INSTITUTION_API_KEY,
+    UPDATED_ITEMS_CONTAINER
+)
+
+
+# noinspection PyMethodMayBeStatic
+class UpdateService:
+    """Service class for Alma Item Updates"""
+    def __init__(self, itemmsg: func.QueueMessage) -> None:
+        """Initialize the service
+
+        Args:
+            itemmsg (func.QueueMessage): Queue message
+        """
+        self.itemmsg: func.QueueMessage = itemmsg
+
+    def update_item(self) -> None:
+        """Update the item in Alma"""
+        message_data: dict[str, Any] = json.loads(self.itemmsg.get_body().decode())  # get queued message
+
+        job_id: str | None = message_data["job_id"]  # get job_id from message data
+        if job_id is None:
+            logging.error("UpdateService.update_item: No job id provided")
+            return
+
+        full_item = self.get_item_data(job_id)
+        item: Item = Item(
+            bib_data=full_item.get("bib_data"),
+            holding_data=full_item.get("holding_data"),
+            item_data=full_item.get("item_data"),
+            link=full_item.get("link")
+        )
+        if item is None:
+            logging.error("UpdateService.update_item: Item not found")
+            return
+
+        institution_id: str | None = item["institution_id"]
+        if institution_id is None:
+            logging.error("UpdateService.update_item: No institution id provided")
+            return
+
+        api_key: str | None = self.get_api_key(int(institution_id))
+
+        alma_api_client: AlmaApiClient = AlmaApiClient(
+            api_key=str(api_key),
+            region='NA',
+            timeout=API_CLIENT_TIMEOUT
+        )
+
+        try:
+            alma_api_client.items.update_item(item)
+        except (ValueError, NotFoundError, InvalidInputError, AlmaApiError, Exception) as e:
+            logging.error(f"UpdateService.update_item: Failed to update item: {e}")
+
+    def get_item_data(self, job_id: str) -> dict[str, Any] | None:
+        """Get item details"""
+        storage_service: StorageService = StorageService()  # initialize storage service
+
+        try:
+            item: dict[str, Any] | None = storage_service.download_blob_as_json(  # get item data from container
+                container_name=UPDATED_ITEMS_CONTAINER,
+                blob_name=job_id + ".json",
+            )
+        except (
+            ValueError,
+            json.JSONDecodeError,
+            azure.core.exceptions.ResourceNotFoundError,
+            azure.core.exceptions.ServiceRequestError,
+            Exception
+        ) as e:
+            logging.warning(f"UpdateService.update_item: Failed to download item from storage service: {e}")
+            return None
+
+        if item is None:
+            logging.warning("UpdateService.update_item: No item provided")
+            return None
+
+        return item
+
+    def get_api_key(self, institution_id: int) -> str | None:
+        """Get institution api key
+
+        Args:
+            institution_id (str): institution id
+
+        Returns:
+            str: institution api key or None
+        """
+        params: dict[str, Any] = {"code": INSTITUTION_API_KEY}
+        url: str = f"{INSTITUTION_API_ENDPOINT}/{institution_id}/api-key"
+
+        try:
+            response: requests.Response = requests.get(url, params=params)  # send request
+            response.raise_for_status()  # raise http errors as errors
+            api_key: str | None = response.json()["api_key"]  # get the API key
+        except (requests.exceptions.HTTPError, Exception) as err:  # Handle HTTP error
+            logging.warning(f"UpdateService.update_item: Failed to get API key: {err}")
+            return None
+
+        if api_key is None:  # Handle missing API key
+            logging.warning("UpdateService.update_item: No institution api key provided")
+            return None
+
+        return api_key
