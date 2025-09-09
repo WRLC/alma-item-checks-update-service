@@ -15,6 +15,7 @@ from alma_item_checks_update_service.config import (
     API_CLIENT_TIMEOUT,
     INSTITUTION_API_ENDPOINT,
     INSTITUTION_API_KEY,
+    NOTIFICATION_QUEUE,
     UPDATED_ITEMS_CONTAINER
 )
 
@@ -67,6 +68,9 @@ class UpdateService:
             alma_api_client.items.update_item(item)
         except (ValueError, NotFoundError, InvalidInputError, AlmaApiError, Exception) as e:
             logging.error(f"UpdateService.update_item: Failed to update item: {e}")
+            return
+
+        self.send_notification(message_data)
 
     def get_item_data(self, job_id: str) -> dict[str, Any] | None:
         """Get item details"""
@@ -118,3 +122,16 @@ class UpdateService:
             return None
 
         return api_key
+
+    def send_notification(self, message_data: dict[str, Any]) -> None:
+        """Send notification about update
+
+        Args:
+            message_data (dict[str, Any]): message data
+        """
+        storage_service: StorageService = StorageService()
+
+        storage_service.send_queue_message(
+            queue_name=NOTIFICATION_QUEUE,
+            message_content=message_data
+        )
