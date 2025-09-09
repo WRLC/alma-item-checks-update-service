@@ -8,6 +8,7 @@ INSTITUTION_API_ENDPOINT = os.getenv("INSTITUTION_API_ENDPOINT")
 INSTITUTION_API_KEY = os.getenv("INSTITUTION_API_KEY")
 
 UPDATE_QUEUE = os.getenv("UPDATE_QUEUE", "update-queue")  # For items that need Alma updates
+NOTIFICATION_QUEUE = os.getenv("NOTIFICATION_QUEUE", "notification-queue")  # For notifications about updates
 
 UPDATED_ITEMS_CONTAINER = os.getenv("UPDATED_ITEMS_CONTAINER", "updated-items-container")  # All updated item data
 
