@@ -6,10 +6,10 @@ from typing import Any
 import azure.core.exceptions
 import azure.functions as func
 import requests
-from wrlc_alma_api_client import AlmaApiClient
-from wrlc_alma_api_client.exceptions import NotFoundError, InvalidInputError, AlmaApiError
-from wrlc_alma_api_client.models import Item
-from wrlc_azure_storage_service import StorageService
+from wrlc_alma_api_client import AlmaApiClient  # type: ignore
+from wrlc_alma_api_client.exceptions import NotFoundError, InvalidInputError, AlmaApiError  # type: ignore
+from wrlc_alma_api_client.models import Item  # type: ignore
+from wrlc_azure_storage_service import StorageService  # type: ignore
 
 from alma_item_checks_update_service.config import (
     API_CLIENT_TIMEOUT,
@@ -41,17 +41,18 @@ class UpdateService:
             return
 
         full_item = self.get_item_data(job_id)
+        if full_item is None:
+            logging.error("UpdateService.update_item: Item not found")
+            return
+
         item: Item = Item(
             bib_data=full_item.get("bib_data"),
             holding_data=full_item.get("holding_data"),
             item_data=full_item.get("item_data"),
             link=full_item.get("link")
         )
-        if item is None:
-            logging.error("UpdateService.update_item: Item not found")
-            return
 
-        institution_id: str | None = item["institution_id"]
+        institution_id: str | None = message_data.get("institution_id")
         if institution_id is None:
             logging.error("UpdateService.update_item: No institution id provided")
             return
