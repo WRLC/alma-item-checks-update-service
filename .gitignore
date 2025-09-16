@@ -57,6 +57,7 @@ azurite-data
 *.sql
 
 CLAUDE.md
+.claude
 
 # Terraform local development files
 **/.terraform/
