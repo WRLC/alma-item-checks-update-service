@@ -106,6 +106,7 @@ jobs:
           VENV_PATH=$(poetry env info --path)
           mkdir -p deployment_package/.python_packages/lib/site-packages
           cp -r $VENV_PATH/lib/python*/site-packages/* deployment_package/.python_packages/lib/site-packages/
+          cp -r alma_item_checks_update_service deployment_package/
           cp function_app.py host.json deployment_package/
 
       - name: Zip artifact for deployment
