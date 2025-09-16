@@ -32,7 +32,7 @@ class TestUpdateService:
     def mock_item_data(self):
         """Mock item data fixture"""
         return {
-            "bib_data": {"title": "Test Book"},
+            "bib_data": {"title": "Test Book", "mms_id": "test-mms-123"},
             "holding_data": {"holding_id": "test-holding-123", "library": {"value": "MAIN", "desc": "Test Library"}},
             "item_data": {"pid": "test-pid-123", "barcode": "123456789"},
             "link": "https://api.example.com/item/123"
@@ -43,9 +43,10 @@ class TestUpdateService:
         service = UpdateService(mock_queue_message)
         assert service.itemmsg == mock_queue_message
 
+    @patch('alma_item_checks_update_service.services.update_service.Item')
     @patch('alma_item_checks_update_service.services.update_service.AlmaApiClient')
     @patch('alma_item_checks_update_service.services.update_service.logging')
-    def test_update_item_success(self, mock_logging, mock_alma_client, update_service, mock_item_data):
+    def test_update_item_success(self, mock_logging, mock_alma_client, mock_item_class, update_service, mock_item_data):
         """Test successful item update"""
         with patch.object(update_service, 'get_item_data') as mock_get_item, \
              patch.object(update_service, 'get_api_key') as mock_get_api_key, \
@@ -53,6 +54,10 @@ class TestUpdateService:
 
             mock_get_item.return_value = mock_item_data
             mock_get_api_key.return_value = "test-api-key"
+
+            # Mock the Item class
+            mock_item_instance = Mock()
+            mock_item_class.return_value = mock_item_instance
 
             mock_client_instance = Mock()
             mock_alma_client.return_value = mock_client_instance
@@ -66,7 +71,22 @@ class TestUpdateService:
                 region='NA',
                 timeout=90
             )
-            mock_client_instance.items.update_item.assert_called_once()
+
+            # Verify Item was created with correct data
+            mock_item_class.assert_called_once_with(
+                bib_data=mock_item_data["bib_data"],
+                holding_data=mock_item_data["holding_data"],
+                item_data=mock_item_data["item_data"],
+                link=mock_item_data["link"]
+            )
+
+            # Verify update_item was called with the Item instance
+            mock_client_instance.items.update_item.assert_called_once_with(
+                mms_id="test-mms-123",
+                holding_id="test-holding-123",
+                item_pid="test-pid-123",
+                item_record_data=mock_item_instance
+            )
             mock_send_notification.assert_called_once()
 
     @patch('alma_item_checks_update_service.services.update_service.logging')
@@ -92,8 +112,9 @@ class TestUpdateService:
 
             mock_logging.error.assert_called_with("UpdateService.update_item: Item not found")
 
+    @patch('alma_item_checks_update_service.services.update_service.Item')
     @patch('alma_item_checks_update_service.services.update_service.logging')
-    def test_update_item_no_institution_id(self, mock_logging, update_service, mock_item_data):
+    def test_update_item_no_institution_id(self, mock_logging, mock_item_class, update_service, mock_item_data):
         """Test update_item when institution_id is None"""
         # Create a queue message without institution_id
         mock_queue_message = Mock(spec=func.QueueMessage)
@@ -103,21 +124,30 @@ class TestUpdateService:
 
         service = UpdateService(mock_queue_message)
 
+        # Mock the Item class
+        mock_item_instance = Mock()
+        mock_item_class.return_value = mock_item_instance
+
         with patch.object(service, 'get_item_data') as mock_get_item:
             mock_get_item.return_value = mock_item_data
             service.update_item()
 
         mock_logging.error.assert_called_with("UpdateService.update_item: No institution id provided")
 
+    @patch('alma_item_checks_update_service.services.update_service.Item')
     @patch('alma_item_checks_update_service.services.update_service.AlmaApiClient')
     @patch('alma_item_checks_update_service.services.update_service.logging')
-    def test_update_item_api_error(self, mock_logging, mock_alma_client, update_service, mock_item_data):
+    def test_update_item_api_error(self, mock_logging, mock_alma_client, mock_item_class, update_service, mock_item_data):
         """Test update_item with API error"""
         with patch.object(update_service, 'get_item_data') as mock_get_item, \
              patch.object(update_service, 'get_api_key') as mock_get_api_key:
 
             mock_get_item.return_value = mock_item_data
             mock_get_api_key.return_value = "test-api-key"
+
+            # Mock the Item class
+            mock_item_instance = Mock()
+            mock_item_class.return_value = mock_item_instance
 
             mock_client_instance = Mock()
             mock_client_instance.items.update_item.side_effect = AlmaApiError("API Error")
@@ -236,9 +266,10 @@ class TestUpdateService:
         (ValueError, "Value error"),
         (Exception, "Generic exception")
     ])
+    @patch('alma_item_checks_update_service.services.update_service.Item')
     @patch('alma_item_checks_update_service.services.update_service.AlmaApiClient')
     @patch('alma_item_checks_update_service.services.update_service.logging')
-    def test_update_item_various_exceptions(self, mock_logging, mock_alma_client,
+    def test_update_item_various_exceptions(self, mock_logging, mock_alma_client, mock_item_class,
                                           exception_type, error_message, update_service, mock_item_data):
         """Test update_item with various exception types"""
         with patch.object(update_service, 'get_item_data') as mock_get_item, \
@@ -246,6 +277,10 @@ class TestUpdateService:
 
             mock_get_item.return_value = mock_item_data
             mock_get_api_key.return_value = "test-api-key"
+
+            # Mock the Item class
+            mock_item_instance = Mock()
+            mock_item_class.return_value = mock_item_instance
 
             mock_client_instance = Mock()
             mock_client_instance.items.update_item.side_effect = exception_type(error_message)
