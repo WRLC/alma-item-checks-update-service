@@ -1,4 +1,5 @@
 """Service class for Alma Item Updates"""
+
 import json
 import logging
 from typing import Any
@@ -7,7 +8,11 @@ import azure.core.exceptions
 import azure.functions as func
 import requests
 from wrlc_alma_api_client import AlmaApiClient  # type: ignore
-from wrlc_alma_api_client.exceptions import NotFoundError, InvalidInputError, AlmaApiError  # type: ignore
+from wrlc_alma_api_client.exceptions import (  # type: ignore
+    NotFoundError,
+    InvalidInputError,
+    AlmaApiError,
+)
 from wrlc_alma_api_client.models import Item  # type: ignore
 from wrlc_azure_storage_service import StorageService  # type: ignore
 
@@ -16,13 +21,15 @@ from alma_item_checks_update_service.config import (
     INSTITUTION_API_ENDPOINT,
     INSTITUTION_API_KEY,
     NOTIFICATION_QUEUE,
-    UPDATED_ITEMS_CONTAINER
+    STORAGE_CONNECTION_STRING,
+    UPDATED_ITEMS_CONTAINER,
 )
 
 
 # noinspection PyMethodMayBeStatic
 class UpdateService:
     """Service class for Alma Item Updates"""
+
     def __init__(self, itemmsg: func.QueueMessage) -> None:
         """Initialize the service
 
@@ -33,7 +40,9 @@ class UpdateService:
 
     def update_item(self) -> None:
         """Update the item in Alma"""
-        message_data: dict[str, Any] = json.loads(self.itemmsg.get_body().decode())  # get queued message
+        message_data: dict[str, Any] = json.loads(
+            self.itemmsg.get_body().decode()
+        )  # get queued message
 
         job_id: str | None = message_data["job_id"]  # get job_id from message data
         if job_id is None:
@@ -45,12 +54,28 @@ class UpdateService:
             logging.error("UpdateService.update_item: Item not found")
             return
 
+        # Create Item object from the full item data
         item: Item = Item(
             bib_data=full_item.get("bib_data"),
             holding_data=full_item.get("holding_data"),
             item_data=full_item.get("item_data"),
-            link=full_item.get("link")
+            link=full_item.get("link"),
         )
+
+        # Extract required IDs from the item data
+        bib_data = full_item.get("bib_data", {})
+        holding_data = full_item.get("holding_data", {})
+        item_data_section = full_item.get("item_data", {})
+
+        mms_id = bib_data.get("mms_id")
+        holding_id = holding_data.get("holding_id")
+        item_pid = item_data_section.get("pid")
+
+        if not all([mms_id, holding_id, item_pid]):
+            logging.error(
+                f"UpdateService.update_item: Missing required IDs - mms_id: {mms_id}, holding_id: {holding_id}, item_pid: {item_pid}"
+            )
+            return
 
         institution_id: str | None = message_data.get("institution_id")
         if institution_id is None:
@@ -60,14 +85,23 @@ class UpdateService:
         api_key: str | None = self.get_api_key(int(institution_id))
 
         alma_api_client: AlmaApiClient = AlmaApiClient(
-            api_key=str(api_key),
-            region='NA',
-            timeout=API_CLIENT_TIMEOUT
+            api_key=str(api_key), region="NA", timeout=API_CLIENT_TIMEOUT
         )
 
         try:
-            alma_api_client.items.update_item(item)
-        except (ValueError, NotFoundError, InvalidInputError, AlmaApiError, Exception) as e:
+            alma_api_client.items.update_item(
+                mms_id=mms_id,
+                holding_id=holding_id,
+                item_pid=item_pid,
+                item_record_data=item,
+            )
+        except (
+            ValueError,
+            NotFoundError,
+            InvalidInputError,
+            AlmaApiError,
+            Exception,
+        ) as e:
             logging.error(f"UpdateService.update_item: Failed to update item: {e}")
             return
 
@@ -75,21 +109,27 @@ class UpdateService:
 
     def get_item_data(self, job_id: str) -> dict[str, Any] | None:
         """Get item details"""
-        storage_service: StorageService = StorageService()  # initialize storage service
+        storage_service: StorageService = StorageService(
+            storage_connection_string=STORAGE_CONNECTION_STRING
+        )  # initialize storage service
 
         try:
-            item: dict[str, Any] | None = storage_service.download_blob_as_json(  # get item data from container
-                container_name=UPDATED_ITEMS_CONTAINER,
-                blob_name=job_id + ".json",
+            item: dict[str, Any] | None = (
+                storage_service.download_blob_as_json(  # get item data from container
+                    container_name=UPDATED_ITEMS_CONTAINER,
+                    blob_name=job_id + ".json",
+                )
             )
         except (
             ValueError,
             json.JSONDecodeError,
             azure.core.exceptions.ResourceNotFoundError,
             azure.core.exceptions.ServiceRequestError,
-            Exception
+            Exception,
         ) as e:
-            logging.warning(f"UpdateService.update_item: Failed to download item from storage service: {e}")
+            logging.warning(
+                f"UpdateService.update_item: Failed to download item from storage service: {e}"
+            )
             return None
 
         if item is None:
@@ -111,7 +151,9 @@ class UpdateService:
         url: str = f"{INSTITUTION_API_ENDPOINT}/{institution_id}/api-key"
 
         try:
-            response: requests.Response = requests.get(url, params=params)  # send request
+            response: requests.Response = requests.get(
+                url, params=params, timeout=API_CLIENT_TIMEOUT
+            )  # send request
             response.raise_for_status()  # raise http errors as errors
             api_key: str | None = response.json()["api_key"]  # get the API key
         except (requests.exceptions.HTTPError, Exception) as err:  # Handle HTTP error
@@ -119,7 +161,9 @@ class UpdateService:
             return None
 
         if api_key is None:  # Handle missing API key
-            logging.warning("UpdateService.update_item: No institution api key provided")
+            logging.warning(
+                "UpdateService.update_item: No institution api key provided"
+            )
             return None
 
         return api_key
@@ -130,9 +174,10 @@ class UpdateService:
         Args:
             message_data (dict[str, Any]): message data
         """
-        storage_service: StorageService = StorageService()
+        storage_service: StorageService = StorageService(
+            storage_connection_string=STORAGE_CONNECTION_STRING
+        )
 
         storage_service.send_queue_message(
-            queue_name=NOTIFICATION_QUEUE,
-            message_content=message_data
+            queue_name=NOTIFICATION_QUEUE, message_content=message_data
         )
