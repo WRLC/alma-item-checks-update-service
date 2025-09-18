@@ -28,6 +28,10 @@ env:
   TF_VAR_tf_shared_storage_account_name: ${{ secrets.TF_SHARED_STORAGE_ACCOUNT_NAME }}
   TF_VAR_tf_shared_container_name: ${{ secrets.TF_SHARED_CONTAINER_NAME }}
   TF_VAR_tf_shared_key: ${{ secrets.TF_SHARED_KEY }}
+  TF_VAR_institution_api_endpoint: ${{ secrets.INSTITUTION_API_ENDPOINT }}
+  TF_VAR_institution_api_key: ${{ secrets.INSTITUTION_API_KEY }}
+  TF_VAR_institution_api_endpoint_stage: ${{ secrets.INSTITUTION_API_ENDPOINT_STAGE }}
+  TF_VAR_institution_api_key_stage: ${{ secrets.INSTITUTION_API_KEY_STAGE }}
   TF_WORKING_DIR: ./terraform
   PYTHON_VERSION: '3.12'
 
