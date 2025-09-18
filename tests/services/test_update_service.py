@@ -416,7 +416,7 @@ class TestUpdateService:
         mock_storage_instance.upload_blob_data.assert_called_once()
         call_args = mock_storage_instance.upload_blob_data.call_args
 
-        assert call_args[1]['container_name'] == 'report-container'
+        assert call_args[1]['container_name'] == 'reports-container'
         assert call_args[1]['blob_name'] == 'test-job-123.json'
 
         # Parse the JSON data to verify its contents
@@ -451,7 +451,7 @@ class TestUpdateService:
         mock_storage_instance.upload_blob_data.assert_called_once()
         call_args = mock_storage_instance.upload_blob_data.call_args
 
-        assert call_args[1]['container_name'] == 'report-container'
+        assert call_args[1]['container_name'] == 'reports-container'
         assert call_args[1]['blob_name'] == 'test-job-456.json'
 
         # Parse the JSON data to verify its contents
