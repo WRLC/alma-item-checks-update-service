@@ -23,6 +23,7 @@ from alma_item_checks_update_service.config import (
     NOTIFICATION_QUEUE,
     STORAGE_CONNECTION_STRING,
     UPDATED_ITEMS_CONTAINER,
+    REPORT_CONTAINER,
 )
 
 
@@ -40,56 +41,63 @@ class UpdateService:
 
     def update_item(self) -> None:
         """Update the item in Alma"""
-        message_data: dict[str, Any] = json.loads(
+        message_data: dict[str, Any] = json.loads(  # get queued message
             self.itemmsg.get_body().decode()
-        )  # get queued message
+        )
 
         job_id: str | None = message_data["job_id"]  # get job_id from message data
         if job_id is None:
             logging.error("UpdateService.update_item: No job id provided")
             return
 
-        full_item = self.get_item_data(job_id)
+        full_item = self.get_item_data(job_id)  # get item details from blob
         if full_item is None:
             logging.error("UpdateService.update_item: Item not found")
             return
 
-        # Create Item object from the full item data
-        item: Item = Item(
-            bib_data=full_item.get("bib_data"),
-            holding_data=full_item.get("holding_data"),
-            item_data=full_item.get("item_data"),
-            link=full_item.get("link"),
+        item: Item = Item(  # Create Item object from the full item data
+            bib_data=full_item.get("bib_data"),  # bib data
+            holding_data=full_item.get("holding_data"),  # holding data
+            item_data=full_item.get("item_data"),  # item data
+            link=full_item.get("link"),  # link
         )
 
-        # Extract required IDs from the item data
-        bib_data = full_item.get("bib_data", {})
-        holding_data = full_item.get("holding_data", {})
-        item_data_section = full_item.get("item_data", {})
+        bib_data = full_item.get("bib_data", {})  # Extract bib data from item
+        holding_data = full_item.get(
+            "holding_data", {}
+        )  # Extract holding data from item
+        item_data_section = full_item.get(
+            "item_data", {}
+        )  # Extract item data from item
 
-        mms_id = bib_data.get("mms_id")
-        holding_id = holding_data.get("holding_id")
-        item_pid = item_data_section.get("pid")
+        mms_id = bib_data.get("mms_id")  # Get mms_id
+        holding_id = holding_data.get("holding_id")  # Get holding_id
+        item_pid = item_data_section.get("pid")  # Get item_pid
 
-        if not all([mms_id, holding_id, item_pid]):
+        if not all([mms_id, holding_id, item_pid]):  # Handle missing data
             logging.error(
-                f"UpdateService.update_item: Missing required IDs - mms_id: {mms_id}, holding_id: {holding_id}, item_pid: {item_pid}"
+                f"UpdateService.update_item: Missing required IDs - mms_id: {mms_id}, holding_id: {holding_id}, "
+                f"item_pid: {item_pid}"
             )
             return
 
-        institution_id: str | None = message_data.get("institution_id")
+        institution_id: str | None = message_data.get(
+            "institution_id"
+        )  # get institution ID
         if institution_id is None:
             logging.error("UpdateService.update_item: No institution id provided")
             return
 
-        api_key: str | None = self.get_api_key(int(institution_id))
+        api_key: str | None = self.get_api_key(
+            int(institution_id)
+        )  # get API key for institution
 
-        alma_api_client: AlmaApiClient = AlmaApiClient(
+        alma_api_client: AlmaApiClient = AlmaApiClient(  # intialize Alma API client
             api_key=str(api_key), region="NA", timeout=API_CLIENT_TIMEOUT
         )
 
         try:
-            alma_api_client.items.update_item(
+            alma_api_client.items.update_item(  # Update Alma item record
                 mms_id=mms_id,
                 holding_id=holding_id,
                 item_pid=item_pid,
@@ -105,13 +113,22 @@ class UpdateService:
             logging.error(f"UpdateService.update_item: Failed to update item: {e}")
             return
 
-        self.send_notification(message_data)
+        self.save_report(item, job_id)  # Save report blob
+
+        self.send_notification(message_data)  # Queue notification message
 
     def get_item_data(self, job_id: str) -> dict[str, Any] | None:
-        """Get item details"""
-        storage_service: StorageService = StorageService(
+        """Get item details
+
+        Args:
+            job_id (str): Job ID
+
+        Returns:
+            dict[str, Any]: Item details or None
+        """
+        storage_service: StorageService = StorageService(  # initialize storage service
             storage_connection_string=STORAGE_CONNECTION_STRING
-        )  # initialize storage service
+        )
 
         try:
             item: dict[str, Any] | None = (
@@ -151,9 +168,11 @@ class UpdateService:
         url: str = f"{INSTITUTION_API_ENDPOINT}/{institution_id}/api-key"
 
         try:
-            response: requests.Response = requests.get(
-                url, params=params, timeout=API_CLIENT_TIMEOUT
-            )  # send request
+            response: requests.Response = (
+                requests.get(  # send request to Institution API
+                    url, params=params, timeout=API_CLIENT_TIMEOUT
+                )
+            )
             response.raise_for_status()  # raise http errors as errors
             api_key: str | None = response.json()["api_key"]  # get the API key
         except (requests.exceptions.HTTPError, Exception) as err:  # Handle HTTP error
@@ -168,16 +187,46 @@ class UpdateService:
 
         return api_key
 
+    def save_report(self, item: Item, job_id: str) -> None:
+        """Save report data
+
+        Args:
+            item (Item): Item object
+            job_id (str): Job id
+        """
+
+        storage_service: StorageService = StorageService(  # Initialize storage service
+            storage_connection_string=STORAGE_CONNECTION_STRING
+        )
+
+        report_data: dict[str, Any] = {  # Create report data
+            "Title": item.bib_data.title,
+            "Barcode": item.item_data.barcode,
+            "Item Call Number": item.item_data.alternative_call_number,
+        }
+
+        if item.item_data.internal_note_1:
+            report_data["Internal Note 1"] = item.item_data.internal_note_1
+
+        if item.item_data.provenance.desc:
+            report_data["Provenance Code"] = item.item_data.provenance.desc
+
+        storage_service.upload_blob_data(  # Save report to container
+            container_name=REPORT_CONTAINER,
+            blob_name=job_id + ".json",
+            data=json.dumps(report_data),
+        )
+
     def send_notification(self, message_data: dict[str, Any]) -> None:
         """Send notification about update
 
         Args:
             message_data (dict[str, Any]): message data
         """
-        storage_service: StorageService = StorageService(
+        storage_service: StorageService = StorageService(  # Initialize storage service
             storage_connection_string=STORAGE_CONNECTION_STRING
         )
 
-        storage_service.send_queue_message(
+        storage_service.send_queue_message(  # Queue notification message
             queue_name=NOTIFICATION_QUEUE, message_content=message_data
         )

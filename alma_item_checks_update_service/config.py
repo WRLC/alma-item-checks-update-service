@@ -19,4 +19,6 @@ UPDATED_ITEMS_CONTAINER = os.getenv(
     "UPDATED_ITEMS_CONTAINER", "updated-items-container"
 )  # All updated item data
 
+REPORT_CONTAINER = os.getenv("REPORT_CONTAINER", "reports-container")
+
 API_CLIENT_TIMEOUT = int(os.getenv("API_CLIENT_TIMEOUT", 90))

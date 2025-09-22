@@ -34,7 +34,13 @@ class TestUpdateService:
         return {
             "bib_data": {"title": "Test Book", "mms_id": "test-mms-123"},
             "holding_data": {"holding_id": "test-holding-123", "library": {"value": "MAIN", "desc": "Test Library"}},
-            "item_data": {"pid": "test-pid-123", "barcode": "123456789"},
+            "item_data": {
+                "pid": "test-pid-123",
+                "barcode": "123456789",
+                "alternative_call_number": "TEST123",
+                "internal_note_1": "Test note",
+                "provenance": {"value": "TEST_CODE", "desc": "Test Provenance"}
+            },
             "link": "https://api.example.com/item/123"
         }
 
@@ -50,6 +56,7 @@ class TestUpdateService:
         """Test successful item update"""
         with patch.object(update_service, 'get_item_data') as mock_get_item, \
              patch.object(update_service, 'get_api_key') as mock_get_api_key, \
+             patch.object(update_service, 'save_report') as mock_save_report, \
              patch.object(update_service, 'send_notification') as mock_send_notification:
 
             mock_get_item.return_value = mock_item_data
@@ -87,6 +94,7 @@ class TestUpdateService:
                 item_pid="test-pid-123",
                 item_record_data=mock_item_instance
             )
+            mock_save_report.assert_called_once_with(mock_item_instance, "test-job-123")
             mock_send_notification.assert_called_once()
 
     @patch('alma_item_checks_update_service.services.update_service.logging')
@@ -318,3 +326,171 @@ class TestUpdateService:
 
         assert result is None
         mock_logging.warning.assert_called()
+
+    @patch('alma_item_checks_update_service.services.update_service.Item')
+    @patch('alma_item_checks_update_service.services.update_service.logging')
+    def test_update_item_missing_mms_id(self, mock_logging, mock_item_class, update_service):
+        """Test update_item with missing mms_id"""
+        mock_item_data = {
+            "bib_data": {"title": "Test Book"},  # No mms_id
+            "holding_data": {"holding_id": "test-holding-123"},
+            "item_data": {"pid": "test-pid-123"},
+            "link": "https://api.example.com/item/123"
+        }
+
+        with patch.object(update_service, 'get_item_data') as mock_get_item:
+            mock_get_item.return_value = mock_item_data
+
+            # Mock the Item class
+            mock_item_instance = Mock()
+            mock_item_class.return_value = mock_item_instance
+
+            update_service.update_item()
+
+            calls = mock_logging.error.call_args_list
+            assert any("Missing required IDs" in str(call) for call in calls)
+
+    @patch('alma_item_checks_update_service.services.update_service.Item')
+    @patch('alma_item_checks_update_service.services.update_service.logging')
+    def test_update_item_missing_holding_id(self, mock_logging, mock_item_class, update_service):
+        """Test update_item with missing holding_id"""
+        mock_item_data = {
+            "bib_data": {"title": "Test Book", "mms_id": "test-mms-123"},
+            "holding_data": {"library": {"value": "MAIN"}},  # No holding_id
+            "item_data": {"pid": "test-pid-123"},
+            "link": "https://api.example.com/item/123"
+        }
+
+        with patch.object(update_service, 'get_item_data') as mock_get_item:
+            mock_get_item.return_value = mock_item_data
+
+            # Mock the Item class
+            mock_item_instance = Mock()
+            mock_item_class.return_value = mock_item_instance
+
+            update_service.update_item()
+
+            calls = mock_logging.error.call_args_list
+            assert any("Missing required IDs" in str(call) for call in calls)
+
+    @patch('alma_item_checks_update_service.services.update_service.Item')
+    @patch('alma_item_checks_update_service.services.update_service.logging')
+    def test_update_item_missing_item_pid(self, mock_logging, mock_item_class, update_service):
+        """Test update_item with missing item_pid"""
+        mock_item_data = {
+            "bib_data": {"title": "Test Book", "mms_id": "test-mms-123"},
+            "holding_data": {"holding_id": "test-holding-123"},
+            "item_data": {"barcode": "123456789"},  # No pid
+            "link": "https://api.example.com/item/123"
+        }
+
+        with patch.object(update_service, 'get_item_data') as mock_get_item:
+            mock_get_item.return_value = mock_item_data
+
+            # Mock the Item class
+            mock_item_instance = Mock()
+            mock_item_class.return_value = mock_item_instance
+
+            update_service.update_item()
+
+            calls = mock_logging.error.call_args_list
+            assert any("Missing required IDs" in str(call) for call in calls)
+
+    @patch('alma_item_checks_update_service.services.update_service.StorageService')
+    def test_save_report_with_all_fields(self, mock_storage_service, update_service):
+        """Test save_report with all optional fields present"""
+        mock_storage_instance = Mock()
+        mock_storage_service.return_value = mock_storage_instance
+
+        # Create a mock Item with all the required nested attributes
+        mock_item = Mock()
+        mock_item.bib_data.title = "Test Book Title"
+        mock_item.item_data.barcode = "123456789"
+        mock_item.item_data.alternative_call_number = "TEST123"
+        mock_item.item_data.internal_note_1 = "Test internal note"
+        mock_item.item_data.provenance.desc = "Test Provenance Description"
+
+        update_service.save_report(mock_item, "test-job-123")
+
+        # Verify the storage service was called with the correct data
+        mock_storage_instance.upload_blob_data.assert_called_once()
+        call_args = mock_storage_instance.upload_blob_data.call_args
+
+        assert call_args[1]['container_name'] == 'reports-container'
+        assert call_args[1]['blob_name'] == 'test-job-123.json'
+
+        # Parse the JSON data to verify its contents
+        import json
+        uploaded_data = json.loads(call_args[1]['data'])
+        expected_data = {
+            "Title": "Test Book Title",
+            "Barcode": "123456789",
+            "Item Call Number": "TEST123",
+            "Internal Note 1": "Test internal note",
+            "Provenance Code": "Test Provenance Description"
+        }
+        assert uploaded_data == expected_data
+
+    @patch('alma_item_checks_update_service.services.update_service.StorageService')
+    def test_save_report_with_minimal_fields(self, mock_storage_service, update_service):
+        """Test save_report with only required fields"""
+        mock_storage_instance = Mock()
+        mock_storage_service.return_value = mock_storage_instance
+
+        # Create a mock Item with minimal fields
+        mock_item = Mock()
+        mock_item.bib_data.title = "Minimal Book"
+        mock_item.item_data.barcode = "987654321"
+        mock_item.item_data.alternative_call_number = "MIN001"
+        mock_item.item_data.internal_note_1 = ""  # Empty, should not be included
+        mock_item.item_data.provenance.desc = ""  # Empty, should not be included
+
+        update_service.save_report(mock_item, "test-job-456")
+
+        # Verify the storage service was called with the correct data
+        mock_storage_instance.upload_blob_data.assert_called_once()
+        call_args = mock_storage_instance.upload_blob_data.call_args
+
+        assert call_args[1]['container_name'] == 'reports-container'
+        assert call_args[1]['blob_name'] == 'test-job-456.json'
+
+        # Parse the JSON data to verify its contents
+        import json
+        uploaded_data = json.loads(call_args[1]['data'])
+        expected_data = {
+            "Title": "Minimal Book",
+            "Barcode": "987654321",
+            "Item Call Number": "MIN001"
+        }
+        assert uploaded_data == expected_data
+
+    @patch('alma_item_checks_update_service.services.update_service.StorageService')
+    def test_save_report_with_none_provenance_desc(self, mock_storage_service, update_service):
+        """Test save_report with None provenance desc"""
+        mock_storage_instance = Mock()
+        mock_storage_service.return_value = mock_storage_instance
+
+        # Create a mock Item with None provenance desc
+        mock_item = Mock()
+        mock_item.bib_data.title = "Test Book"
+        mock_item.item_data.barcode = "111222333"
+        mock_item.item_data.alternative_call_number = "ABC123"
+        mock_item.item_data.internal_note_1 = "Note here"
+        mock_item.item_data.provenance.desc = None  # None, should not be included
+
+        update_service.save_report(mock_item, "test-job-789")
+
+        # Verify the storage service was called with the correct data
+        mock_storage_instance.upload_blob_data.assert_called_once()
+        call_args = mock_storage_instance.upload_blob_data.call_args
+
+        # Parse the JSON data to verify its contents
+        import json
+        uploaded_data = json.loads(call_args[1]['data'])
+        expected_data = {
+            "Title": "Test Book",
+            "Barcode": "111222333",
+            "Item Call Number": "ABC123",
+            "Internal Note 1": "Note here"
+        }
+        assert uploaded_data == expected_data

@@ -65,14 +65,22 @@ resource "azurerm_linux_function_app" "function_app" {
 
   app_settings = {
     "WEBSITE_RUN_FROM_PACKAGE" = "1"
+    "INSTITUTION_API_ENDPOINT" = var.institution_api_endpoint
+    "INSTITUTION_API_KEY"      = var.institution_api_key
     "UPDATE_QUEUE"             = local.storage_queues["update-queue"]
     "UPDATED_ITEMS_CONTAINER"  = local.storage_containers["updated-items-container"]
+    "NOTIFICATION_QUEUE"       = local.storage_queues["update-queue"]
+    "REPORT_CONTAINER"         = local.storage_containers["reports-container"]
   }
 
   sticky_settings {
     app_setting_names = [
+      "INSTITUTION_API_ENDPOINT",
+      "INSTITUTION_API_KEY",
       "UPDATE_QUEUE",
-      "UPDATED_ITEMS_CONTAINER"
+      "UPDATED_ITEMS_CONTAINER",
+      "NOTIFICATION_QUEUE",
+      "REPORT_CONTAINER"
     ]
   }
 }
@@ -93,8 +101,12 @@ resource "azurerm_linux_function_app_slot" "staging_slot" {
   }
 
   app_settings = {
-    "WEBSITE_RUN_FROM_PACKAGE"     = "1"
+    "WEBSITE_RUN_FROM_PACKAGE" = "1"
+    "INSTITUTION_API_ENDPOINT" = var.institution_api_endpoint_stage
+    "INSTITUTION_API_KEY"      = var.institution_api_key_stage
     "UPDATE_QUEUE"             = local.storage_queues["update-queue-stage"]
     "UPDATED_ITEMS_CONTAINER"  = local.storage_containers["updated-items-container-stage"]
+    "NOTIFICATION_QUEUE"       = local.storage_queues["update-queue-stage"]
+    "REPORT_CONTAINER"         = local.storage_containers["reports-container-stage"]
   }
 }

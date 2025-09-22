@@ -1,4 +1,4 @@
-#file: noinspection UndefinedAction
+#file: noinspection UndefinedAction,UndefinedParamsPresent
 name: Terraform, Build, and Deploy to Stage
 
 on:
@@ -19,10 +19,6 @@ permissions:
   id-token: write
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 env:
   ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
   ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
@@ -32,6 +28,10 @@ env:
   TF_VAR_tf_shared_storage_account_name: ${{ secrets.TF_SHARED_STORAGE_ACCOUNT_NAME }}
   TF_VAR_tf_shared_container_name: ${{ secrets.TF_SHARED_CONTAINER_NAME }}
   TF_VAR_tf_shared_key: ${{ secrets.TF_SHARED_KEY }}
+  TF_VAR_institution_api_endpoint: ${{ secrets.INSTITUTION_API_ENDPOINT }}
+  TF_VAR_institution_api_key: ${{ secrets.INSTITUTION_API_KEY }}
+  TF_VAR_institution_api_endpoint_stage: ${{ secrets.INSTITUTION_API_ENDPOINT_STAGE }}
+  TF_VAR_institution_api_key_stage: ${{ secrets.INSTITUTION_API_KEY_STAGE }}
   TF_WORKING_DIR: ./terraform
   PYTHON_VERSION: '3.12'
 
@@ -82,6 +82,8 @@ jobs:
   build:
     name: Build Application
     runs-on: ubuntu-latest
+    needs: terraform
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v5
@@ -108,6 +110,7 @@ jobs:
           VENV_PATH=$(poetry env info --path)
           mkdir -p deployment_package/.python_packages/lib/site-packages
           cp -r $VENV_PATH/lib/python*/site-packages/* deployment_package/.python_packages/lib/site-packages/
+          cp -r alma_item_checks_update_service deployment_package/
           cp function_app.py host.json deployment_package/
 
       - name: Zip artifact for deployment
