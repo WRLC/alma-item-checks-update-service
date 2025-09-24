@@ -24,20 +24,28 @@ env:
   ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
   ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
   ARM_USE_OIDC: true
-  TF_VAR_tf_shared_resource_group_name: ${{ secrets.TF_SHARED_RESOURCE_GROUP_NAME }}
-  TF_VAR_tf_shared_storage_account_name: ${{ secrets.TF_SHARED_STORAGE_ACCOUNT_NAME }}
-  TF_VAR_tf_shared_container_name: ${{ secrets.TF_SHARED_CONTAINER_NAME }}
-  TF_VAR_tf_shared_key: ${{ secrets.TF_SHARED_KEY }}
-  TF_VAR_institution_api_endpoint: ${{ secrets.INSTITUTION_API_ENDPOINT }}
-  TF_VAR_institution_api_key: ${{ secrets.INSTITUTION_API_KEY }}
-  TF_VAR_institution_api_endpoint_stage: ${{ secrets.INSTITUTION_API_ENDPOINT_STAGE }}
-  TF_VAR_institution_api_key_stage: ${{ secrets.INSTITUTION_API_KEY_STAGE }}
   TF_WORKING_DIR: ./terraform
 
 jobs:
   terraform:
     name: Terraform
     runs-on: ubuntu-latest
+
+    env:
+      TF_WORKING_DIR: ./terraform
+      TF_STATE_RG: ${{ secrets.TF_STATE_RG }}
+      TF_STATE_SA: ${{ secrets.TF_STATE_SA }}
+      TF_STATE_CONTAINER: ${{ secrets.TF_STATE_CONTAINER }}
+      TF_STATE_KEY: ${{ secrets.TF_STATE_KEY }}
+      TF_VAR_tf_shared_resource_group_name: ${{ secrets.TF_SHARED_RESOURCE_GROUP_NAME }}
+      TF_VAR_tf_shared_storage_account_name: ${{ secrets.TF_SHARED_STORAGE_ACCOUNT_NAME }}
+      TF_VAR_tf_shared_container_name: ${{ secrets.TF_SHARED_CONTAINER_NAME }}
+      TF_VAR_tf_shared_key: ${{ secrets.TF_SHARED_KEY }}
+      TF_VAR_institution_api_endpoint: ${{ secrets.INSTITUTION_API_ENDPOINT }}
+      TF_VAR_institution_api_key: ${{ secrets.INSTITUTION_API_KEY }}
+      TF_VAR_institution_api_endpoint_stage: ${{ secrets.INSTITUTION_API_ENDPOINT_STAGE }}
+      TF_VAR_institution_api_key_stage: ${{ secrets.INSTITUTION_API_KEY_STAGE }}
+
     outputs:
       function_app_name: ${{ steps.get_outputs.outputs.function_app_name }}
       python_version: ${{ steps.get_outputs.outputs.python_version }}
@@ -64,10 +72,10 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
           terraform init \
-            -backend-config="resource_group_name=${{ secrets.TF_STATE_RG }}" \
-            -backend-config="storage_account_name=${{ secrets.TF_STATE_SA }}" \
-            -backend-config="container_name=${{ secrets.TF_STATE_CONTAINER }}" \
-            -backend-config="key=${{ secrets.TF_STATE_KEY }}"
+            -backend-config="resource_group_name=${{ env.TF_STATE_RG }}" \
+            -backend-config="storage_account_name=${{ env.TF_STATE_SA }}" \
+            -backend-config="container_name=${{ env.TF_STATE_CONTAINER }}" \
+            -backend-config="key=${{ env.TF_STATE_KEY }}"
 
       - name: Terraform Apply
         working-directory: ${{ env.TF_WORKING_DIR }}

@@ -8,16 +8,21 @@ permissions:
   id-token: write
   contents: read
 
-env:
-  ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
-  ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
-  ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
-  ARM_USE_OIDC: true
-
 jobs:
   promote-to-production:
     runs-on: ubuntu-latest
     environment: production
+
+    env:
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      ARM_USE_OIDC: true
+      TF_WORKING_DIR: ./terraform
+      TF_STATE_RG: ${{ secrets.TF_STATE_RG }}
+      TF_STATE_SA: ${{ secrets.TF_STATE_SA }}
+      TF_STATE_CONTAINER: ${{ secrets.TF_STATE_CONTAINER }}
+      TF_STATE_KEY: ${{ secrets.TF_STATE_KEY }}
 
     steps:
     - name: Checkout code
@@ -38,9 +43,9 @@ jobs:
     - name: Azure Login
       uses: azure/login@v2
       with:
-        client-id: ${{ secrets.ARM_CLIENT_ID }}
-        tenant-id: ${{ secrets.ARM_TENANT_ID }}
-        subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+        client-id: ${{ env.ARM_CLIENT_ID }}
+        tenant-id: ${{ env.ARM_TENANT_ID }}
+        subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
@@ -51,10 +56,10 @@ jobs:
       working-directory: terraform
       run: |
         terraform init \
-          -backend-config="resource_group_name=${{ secrets.TF_STATE_RG }}" \
-          -backend-config="storage_account_name=${{ secrets.TF_STATE_SA }}" \
-          -backend-config="container_name=${{ secrets.TF_STATE_CONTAINER }}" \
-          -backend-config="key=${{ secrets.TF_STATE_KEY }}"
+          -backend-config="resource_group_name=${{ env.TF_STATE_RG }}" \
+          -backend-config="storage_account_name=${{ env.TF_STATE_SA }}" \
+          -backend-config="container_name=${{ env.TF_STATE_CONTAINER }}" \
+          -backend-config="key=${{ env.TF_STATE_KEY }}"
 
         FUNCTION_APP_NAME=$(terraform output -raw function_app_name)
         RG_NAME=$(terraform output -raw function_app_resource_group_name)
